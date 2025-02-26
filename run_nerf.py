@@ -31,6 +31,7 @@ import cv2
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#device = "cpu"
 # torch.cuda.set_device(2)
 np.random.seed(0)
 DEBUG = False
@@ -188,7 +189,10 @@ def render_path(render_poses, hwf, chunk, render_kwargs, gt_imgs=None, savedir=N
             # depth_color = cv2.applyColorMap(depth.astype(np.uint8), cv2.COLORMAP_JET)[:,:,::-1]
             # depth_color[np.isnan(depth_color)] = 0
             # imageio.imwrite(os.path.join(savedir, '{:03d}_depth.png'.format(i)), depth_color)
-            #imageio.imwrite(os.path.join(savedir, '{:03d}_depth.png'.format(i)), depth)
+            # imageio.imwrite(os.path.join(savedir, '{:03d}_depth.png'.format(i)), depth)
+            depth_16bit = (depth - depth.min()) / (depth.max() - depth.min()) * 65535
+            depth_16bit = depth_16bit.astype(np.uint16)
+            imageio.imwrite(os.path.join(savedir, '{:03d}_depth.png'.format(i)), depth_16bit)
             np.savez(os.path.join(savedir, '{:03d}.npz'.format(i)), rgb=rgb.cpu().numpy(), disp=disp.cpu().numpy(), acc=acc.cpu().numpy(), depth=depth)
 
 
@@ -861,8 +865,8 @@ def train():
     if use_batching:
         # rays_rgb = torch.Tensor(rays_rgb).to(device)
         # rays_depth = torch.Tensor(rays_depth).to(device) if rays_depth is not None else None
-        raysRGB_iter = iter(DataLoader(RayDataset(rays_rgb), batch_size = N_rgb, shuffle=True, num_workers=0))
-        raysDepth_iter = iter(DataLoader(RayDataset(rays_depth), batch_size = N_depth, shuffle=True, num_workers=0)) if rays_depth is not None else None
+        raysRGB_iter = iter(DataLoader(RayDataset(rays_rgb), batch_size = N_rgb//2, shuffle=True, num_workers=0))
+        raysDepth_iter = iter(DataLoader(RayDataset(rays_depth), batch_size = N_depth//2, shuffle=True, num_workers=0)) if rays_depth is not None else None
 
 
     N_iters = args.N_iters + 1
