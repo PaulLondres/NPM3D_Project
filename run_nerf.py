@@ -590,7 +590,7 @@ def config_parser():
     parser.add_argument("--debug",  action='store_true')
 
     # new experiment by kangle
-    parser.add_argument("--N_iters", type=int, default=200000, 
+    parser.add_argument("--N_iters", type=int, default=20000,
                         help='number of iters')
     parser.add_argument("--alpha_model_path", type=str, default=None,
                         help='predefined alpha model')
@@ -919,7 +919,7 @@ def train():
             target = images[img_i]
             pose = poses[img_i, :3,:4]
 
-            if N_rand is not None:
+            if args.N_rand is not None:
                 rays_o, rays_d = get_rays(H, W, focal, torch.Tensor(pose))  # (H, W, 3), (H, W, 3)
 
                 if i < args.precrop_iters:
