@@ -51,13 +51,14 @@ def run_network(inputs, viewdirs, fn, embed_fn, embeddirs_fn, netchunk=1024*64):
     """Prepares inputs and applies network 'fn'.
     """
     inputs_flat = torch.reshape(inputs, [-1, inputs.shape[-1]])
-    embedded = embed_fn(inputs_flat)
 
     if viewdirs is not None:
         input_dirs = viewdirs[:,None].expand(inputs.shape)
         input_dirs_flat = torch.reshape(input_dirs, [-1, input_dirs.shape[-1]])
         embedded_dirs = embeddirs_fn(input_dirs_flat)
-        embedded = torch.cat([embedded, embedded_dirs], -1)
+        embedded = torch.cat([embed_fn(inputs_flat), embedded_dirs], -1)
+    else:
+        embedded = embed_fn(inputs_flat)
 
     outputs_flat = batchify(fn, netchunk)(embedded)
     outputs = torch.reshape(outputs_flat, list(inputs.shape[:-1]) + [outputs_flat.shape[-1]])
@@ -889,7 +890,7 @@ def train():
             try:
                 batch = next(raysRGB_iter).to(device)
             except StopIteration:
-                raysRGB_iter = iter(DataLoader(RayDataset(rays_rgb), batch_size = N_rgb, shuffle=True, num_workers=0))
+                raysRGB_iter = iter(DataLoader(RayDataset(rays_rgb), batch_size = N_rgb//2, shuffle=True, num_workers=0))
                 batch = next(raysRGB_iter).to(device)
             batch = torch.transpose(batch, 0, 1)
             batch_rays, target_s = batch[:2], batch[2]
@@ -899,7 +900,7 @@ def train():
                 try:
                     batch_depth = next(raysDepth_iter).to(device)
                 except StopIteration:
-                    raysDepth_iter = iter(DataLoader(RayDataset(rays_depth), batch_size = N_depth, shuffle=True, num_workers=0))
+                    raysDepth_iter = iter(DataLoader(RayDataset(rays_depth), batch_size = N_depth//2, shuffle=True, num_workers=0))
                     batch_depth = next(raysDepth_iter).to(device)
                 batch_depth = torch.transpose(batch_depth, 0, 1)
                 batch_rays_depth = batch_depth[:2] # 2 x B x 3
@@ -1076,12 +1077,12 @@ def train():
             os.makedirs(testsavedir, exist_ok=True)
             print('test poses shape', poses[i_test].shape)
             with torch.no_grad():
-                rgbs, disps = render_path(torch.Tensor(poses[i_test]).to(device), hwf, args.chunk, render_kwargs_test, gt_imgs=images[i_test], savedir=testsavedir)
+                rgbs, disps = render_path(torch.Tensor(poses[i_test]).to(device), hwf, args.chunk, render_kwargs_test, gt_imgs=images[i_test], savedir=testsavedir, render_factor=args.render_factor)
             print('Saved test set')
 
             filenames = [os.path.join(testsavedir, '{:03d}.png'.format(k)) for k in range(len(i_test))]
 
-            test_loss = img2mse(torch.Tensor(rgbs), images[i_test])
+            test_loss = img2mse(torch.Tensor(rgbs), images[i_test][:, ::args.render_factor, ::args.render_factor].cpu()) #TODO: better subsampling to match the down sampled rendered image
             test_psnr = mse2psnr(test_loss)
 
     
