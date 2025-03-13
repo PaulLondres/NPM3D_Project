@@ -723,7 +723,9 @@ def train():
     H, W = int(H), int(W)
     hwf = [H, W, focal]
 
-    if args.render_test:
+    if args.render_train and args.render_test:
+        render_poses = np.concatenate([poses[i_train], poses[i_test]], axis=0)
+    elif args.render_test:
         render_poses = np.array(poses[i_test])
     elif args.render_train:
         render_poses = np.array(poses[i_train])
