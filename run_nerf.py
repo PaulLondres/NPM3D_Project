@@ -150,11 +150,11 @@ def render(H, W, focal, chunk=1024*32, rays=None, c2w=None, ndc=True,
     return ret_list + [ret_dict]
 
 
-def render_path(render_poses, hwf, chunk, render_kwargs, gt_imgs=None, savedir=None, render_factor=0):
+def render_path(render_poses, hwf, chunk, render_kwargs, gt_imgs=None, savedir=None, render_factor=1, img_idx = None):
 
     H, W, focal = hwf
 
-    if render_factor!=0:
+    if render_factor!=1:
         # Render downsampled for speed
         H = H//render_factor
         W = W//render_factor
@@ -182,7 +182,11 @@ def render_path(render_poses, hwf, chunk, render_kwargs, gt_imgs=None, savedir=N
         if savedir is not None:
             rgb8 = to8b(rgbs[-1])
             rgb8[np.isnan(rgb8)] = 0
-            filename = os.path.join(savedir, '{:03d}.png'.format(i))
+            if img_idx is not None:
+                index = img_idx[i]
+            else:
+                index = i
+            filename = os.path.join(savedir, '{:03d}.png'.format(index))
             imageio.imwrite(filename, rgb8)
             depth = depth.cpu().numpy()
             print("max:", np.nanmax(depth))
@@ -193,8 +197,8 @@ def render_path(render_poses, hwf, chunk, render_kwargs, gt_imgs=None, savedir=N
             # imageio.imwrite(os.path.join(savedir, '{:03d}_depth.png'.format(i)), depth)
             depth_16bit = (depth - depth.min()) / (depth.max() - depth.min()) * 65535
             depth_16bit = depth_16bit.astype(np.uint16)
-            imageio.imwrite(os.path.join(savedir, '{:03d}_depth.png'.format(i)), depth_16bit)
-            np.savez(os.path.join(savedir, '{:03d}.npz'.format(i)), rgb=rgb.cpu().numpy(), disp=disp.cpu().numpy(), acc=acc.cpu().numpy(), depth=depth)
+            imageio.imwrite(os.path.join(savedir, '{:03d}_depth.png'.format(index)), depth_16bit)
+            np.savez(os.path.join(savedir, '{:03d}.npz'.format(index)), rgb=rgb.cpu().numpy(), disp=disp.cpu().numpy(), acc=acc.cpu().numpy(), depth=depth)
 
 
     rgbs = np.stack(rgbs, 0)
@@ -542,7 +546,7 @@ def config_parser():
                         help='render the train set instead of render_poses path')  
     parser.add_argument("--render_mypath", action='store_true', 
                         help='render the test path')         
-    parser.add_argument("--render_factor", type=int, default=0, 
+    parser.add_argument("--render_factor", type=int, default=1,
                         help='downsampling factor to speed up rendering, set 4 or 8 for fast preview')
 
     # training options
@@ -713,7 +717,7 @@ def train():
         near = 0.1
         far = 5.0
         if args.colmap_depth:
-            depth_gts = load_colmap_depth(args.datadir, factor=args.factor, bd_factor=.75)
+            depth_gts = load_colmap_depth(args.datadir, factor=args.factor, bd_factor=.75, bounds = [near/0.9, far])
     else:
         print('Unknown dataset type', args.dataset_type, 'exiting')
         return
@@ -1086,6 +1090,23 @@ def train():
 
             test_loss = img2mse(torch.Tensor(rgbs), images[i_test][:, ::args.render_factor, ::args.render_factor].cpu()) #TODO: better subsampling to match the down sampled rendered image
             test_psnr = mse2psnr(test_loss)
+            print("Test PSNR : ", test_psnr.item())
+
+            trainsavedir = os.path.join(basedir, expname, 'trainset_{:06d}'.format(i))
+            os.makedirs(trainsavedir, exist_ok=True)
+            print('test poses shape', poses[i_train].shape)
+            with torch.no_grad():
+                rgbs, disps = render_path(torch.Tensor(poses[i_train]).to(device), hwf, args.chunk, render_kwargs_test,
+                                          gt_imgs=images[i_train], savedir=trainsavedir, render_factor=args.render_factor)
+            print('Saved test set')
+
+            filenames = [os.path.join(trainsavedir, '{:03d}.png'.format(k)) for k in range(len(i_train))]
+
+            train_loss = img2mse(torch.Tensor(rgbs), images[i_train][:, ::args.render_factor,
+                                                    ::args.render_factor].cpu())  # TODO: better subsampling to match the down sampled rendered image
+            train_psnr = mse2psnr(train_loss)
+            print("Test (train) PSNR : ", train_psnr.item())
+
 
     
         if i%args.i_print==0:
