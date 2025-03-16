@@ -336,7 +336,7 @@ def get_poses(images):
         poses.append(c2w)
     return np.array(poses)
 
-def load_colmap_depth(basedir, factor=8, bd_factor=.75):
+def load_colmap_depth(basedir, factor=8, bd_factor=.75, bounds = None):
     data_file = Path(basedir) / 'colmap_depth.npy'
     
     images = read_images_binary(Path(basedir) / 'sparse' / '0' / 'images.bin')
@@ -347,14 +347,20 @@ def load_colmap_depth(basedir, factor=8, bd_factor=.75):
     print("Mean Projection Error:", Err_mean)
     
     poses = get_poses(images)
-    _, bds_raw, _ = _load_data(basedir, factor=factor) # factor=8 downsamples original imgs by 8x
-    bds_raw = np.moveaxis(bds_raw, -1, 0).astype(np.float32)
-    # print(bds_raw.shape)
+    if bounds is None:
+        _, bds_raw, _ = _load_data(basedir, factor=factor) # factor=8 downsamples original imgs by 8x
+        bds_raw = np.moveaxis(bds_raw, -1, 0).astype(np.float32)
+        bound_min = np.ndarray.min(bds_raw)
+        bound_max = np.ndarray.max(bds_raw)
+    else:
+        bound_min = bounds[0]
+        bound_max = bounds[1]
+    # print(bds_raw.shapenp.ndarray.min(bds_raw))
     # Rescale if bd_factor is provided
-    sc = 1. if bd_factor is None else 1./(bds_raw.min() * bd_factor)
+    sc = 1. #if bd_factor is None else 1./(bound_min * bd_factor)
     
-    near = np.ndarray.min(bds_raw) * .9 * sc
-    far = np.ndarray.max(bds_raw) * 1. * sc
+    near = bound_min * .9 * sc
+    far = bound_max * 1. * sc
     print('near/far:', near, far)
 
     data_list = []
@@ -369,7 +375,8 @@ def load_colmap_depth(basedir, factor=8, bd_factor=.75):
                 continue
             point3D = points[id_3D].xyz
             depth = (poses[id_im-1,:3,2].T @ (point3D - poses[id_im-1,:3,3])) * sc
-            if depth < bds_raw[id_im-1,0] * sc or depth > bds_raw[id_im-1,1] * sc:
+
+            if depth < bound_min * 2 or depth > bound_max * 2:
                 continue
             err = points[id_3D].error
             weight = 2 * np.exp(-(err/Err_mean)**2)
@@ -377,7 +384,6 @@ def load_colmap_depth(basedir, factor=8, bd_factor=.75):
             coord_list.append(point2D/factor)
             weight_list.append(weight)
         if len(depth_list) > 0:
-            print(id_im, len(depth_list), np.min(depth_list), np.max(depth_list), np.mean(depth_list))
             data_list.append({"depth":np.array(depth_list), "coord":np.array(coord_list), "error":np.array(weight_list)})
         else:
             print(id_im, len(depth_list))
